@@ -8,6 +8,10 @@ import hashlib, struct, os, sys, json, time, sqlite3, io
 import hmac as hmac_mod
 from datetime import datetime
 from Crypto.Cipher import AES
+import zstandard as zstd
+from key_utils import get_key_info, strip_key_metadata
+
+_zstd_dctx = zstd.ZstdDecompressor()
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
@@ -146,9 +150,9 @@ def main():
 
     # 加载密钥
     with open(KEYS_FILE) as f:
-        keys = json.load(f)
+        keys = strip_key_metadata(json.load(f))
 
-    session_key_info = keys.get("session\\session.db")
+    session_key_info = get_key_info(keys, os.path.join("session", "session.db"))
     if not session_key_info:
         print("[ERROR] 找不到session.db的密钥")
         sys.exit(1)
@@ -218,6 +222,11 @@ def main():
 
                     # 消息内容
                     summary = curr['summary']
+                    if isinstance(summary, bytes):
+                        try:
+                            summary = _zstd_dctx.decompress(summary).decode('utf-8', errors='replace')
+                        except Exception:
+                            summary = '(压缩内容)'
                     if summary:
                         # 群消息格式: "wxid_xxx:\n内容" - 提取内容部分
                         if ':\n' in summary:
